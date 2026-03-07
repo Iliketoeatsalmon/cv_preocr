@@ -8,6 +8,7 @@ Pipeline:
 3. `features.py` - extract 132-dim feature vector
 4. `classifier.py` - manual k-NN predict
 5. `main_pipeline.py` - run end-to-end recognition
+6. `streamlit_app.py` - upload image and preview OCR results in a UI
 
 ## Project Structure
 
@@ -39,6 +40,19 @@ With custom k and dataset root:
 ```bash
 python3 main_pipeline.py --image path/to/row.jpg --dataset-root dataset --k 3
 ```
+
+## Run The Upload UI
+
+```bash
+streamlit run streamlit_app.py
+```
+
+The UI lets you:
+
+- upload `.png`, `.jpg`, `.jpeg`, or `.bmp`
+- preview the original image and detected character boxes
+- view the recognized text
+- inspect each segmented crop and its normalized 32x32 input
 
 ## Notes
 

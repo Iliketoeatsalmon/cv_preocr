@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -9,11 +10,20 @@ import numpy as np
 from classifier import knn_predict, train_knn
 from features import extract_features
 from preprocessing import preprocess_char
-from segmentation import segment_row_image
+from segmentation import segment_row_array_with_boxes
 
 
 EXTS = {".png", ".jpg", ".jpeg", ".bmp"}
 _MODEL_CACHE: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+
+
+@dataclass
+class OCRResult:
+    text: str
+    predictions: list[str]
+    char_crops: list[np.ndarray]
+    normalized_chars: list[np.ndarray]
+    boxes: list[tuple[int, int, int, int]]
 
 
 def _load_training_dataset(dataset_root: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -60,20 +70,54 @@ def _get_model(dataset_root: str) -> tuple[np.ndarray, np.ndarray]:
     return _MODEL_CACHE[key]
 
 
-def recognize_row_image(img_path: str, dataset_root: str = "dataset", k: int = 3) -> str:
+def _predict_char_images(
+    char_images: list[np.ndarray],
+    dataset_root: str,
+    k: int,
+) -> tuple[list[str], list[np.ndarray]]:
     X_train, y_train = _get_model(dataset_root)
-    chars = segment_row_image(img_path)
-    if not chars:
-        return ""
+    if not char_images:
+        return [], []
 
+    normalized_chars: list[np.ndarray] = []
     feats: list[np.ndarray] = []
-    for char_img in chars:
+    for char_img in char_images:
         norm = preprocess_char(char_img)
+        normalized_chars.append(norm)
         feats.append(extract_features(norm))
 
     X_test = np.vstack(feats).astype(np.float32)
     pred_ids = knn_predict(X_train, y_train, X_test, k=k)
-    return "".join(chr(int(pid) + ord("A")) for pid in pred_ids)
+    predictions = [chr(int(pid) + ord("A")) for pid in pred_ids]
+    return predictions, normalized_chars
+
+
+def analyze_row_array(img: np.ndarray, dataset_root: str = "dataset", k: int = 3) -> OCRResult:
+    char_crops, boxes = segment_row_array_with_boxes(img)
+    predictions, normalized_chars = _predict_char_images(char_crops, dataset_root=dataset_root, k=k)
+    return OCRResult(
+        text="".join(predictions),
+        predictions=predictions,
+        char_crops=char_crops,
+        normalized_chars=normalized_chars,
+        boxes=boxes,
+    )
+
+
+def analyze_row_image(img_path: str, dataset_root: str = "dataset", k: int = 3) -> OCRResult:
+    path = Path(img_path)
+    img = cv2.imread(str(path))
+    if img is None:
+        raise FileNotFoundError(f"Cannot read image: {path}")
+    return analyze_row_array(img, dataset_root=dataset_root, k=k)
+
+
+def recognize_row_array(img: np.ndarray, dataset_root: str = "dataset", k: int = 3) -> str:
+    return analyze_row_array(img, dataset_root=dataset_root, k=k).text
+
+
+def recognize_row_image(img_path: str, dataset_root: str = "dataset", k: int = 3) -> str:
+    return analyze_row_image(img_path, dataset_root=dataset_root, k=k).text
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
